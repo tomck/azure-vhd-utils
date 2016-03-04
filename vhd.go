@@ -22,7 +22,6 @@ func main() {
 	app.Commands = []cli.Command{
 		vhdInspectCmdHandler(),
 		vhdUploadCmdHandler(),
-		vhdTestCmdHandler(),
 	}
 
 	app.Run(os.Args)
