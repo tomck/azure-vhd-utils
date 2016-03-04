@@ -21,9 +21,33 @@ OPTIONS:
    --stgaccountkey      Azure storage account key.
    --containername      Name of the container holding destination page blob. (Default: vhds)
    --blobname           Name of the destination page blob.
+   --parallelism        Number of concurrent goroutines to be used for upload
 ```
 
-The upload command uploads local VHD to Azure storage as page blob. Once uploaded, you can use Azure portal to register an image based on this page blob and use it to create Azure Virtual Machines.
+The upload command uploads local VHD to Azure storage as page blob. Once uploaded, you can use Microsoft Azure portal to register an image based on this page blob and use it to create Azure Virtual Machines.
+
+#### Note
+When creating a VHD for Microsoft Azure, the size of the VHD must be a whole number in megabytes, otherwise you will see an error similar to the following when you attempt to create image from the uploaded VHD in Azure:
+
+"The VHD http://<mystorageaccount>.blob.core.windows.net/vhds/<vhd-pageblob-name>.vhd has an unsupported virtual size of <number> bytes. The size must be a whole number (in MBs)."
+
+You should ensure the VHD size is even MB before uploading
+
+##### For virtual box:
+-------------------
+VBoxManage modifyhd <absolute path to file> --resize &lt;size in MB&gt;
+
+##### For Hyper V:
+----------------
+Resize-VHD -Path <absolute path to file> -SizeBytes &lt;size&gt;
+  Azure Help: http://azure.microsoft.com/blog/2014/05/22/running-freebsd-in-azure/
+
+##### For Qemu:
+-------------
+qemu-img resize &lt;path-to-raw-file&gt; size
+  Azure Help: http://azure.microsoft.com/en-us/documentation/articles/virtual-machines-linux-create-upload-vhd-generic/
+ 
+#### How upload work
 
 Azure requires VHD to be in Fixed Disk format. The command converts Dynamic and Differencing Disk to Fixed Disk during upload process, the conversion will not consume any additional space in local machine.
 
@@ -32,6 +56,8 @@ the Block Allocation Table (BAT) will be uploaded.
 
 The blocks containing data will be uploaded as chunks of 2 MB pages. Consecutive blocks will be merged to create 2 MB pages if the block size of disk is less than 2 MB. If the block size is greater than 2 MB, 
 tool will split them as 2 MB pages.  
+
+With page blob, we can upload multiple pages in parallel to decrease upload time. The command accepts the number of concurrent goroutines to use for upload through parallelism parameter. If the parallelism parameter is not proivded then it default to 8 * number_of_cpus.
 
 ### Inspect local VHD
 
