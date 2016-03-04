@@ -38,9 +38,13 @@ func vhdUploadCmdHandler() cli.Command {
 				Name: "blobname",
 				Usage: "Name of the destination page blob.",
 			},
+			cli.StringFlag{
+				Name: "parallelism",
+				Usage: "Number of concurrent goroutines to be used for upload",
+			},
 			cli.BoolFlag{
 				Name:  "overwrite",
-				Usage: "Overwrite the blob if already exists.",
+				Usage: "Overwrite the blob if already exists. <not implemented>",
 			},
 		},
 		Action: func (c *cli.Context) {

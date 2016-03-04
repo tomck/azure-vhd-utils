@@ -45,7 +45,7 @@ func vhdInspectCmdHandler() cli.Command {
 				Flags: []cli.Flag{
 					cli.StringFlag{
 						Name:  "path",
-						Usage: "Path to vhd.",
+						Usage: "Path to VHD.",
 					},
 				},
 				Action: showVhdHeader,
@@ -56,7 +56,7 @@ func vhdInspectCmdHandler() cli.Command {
 				Flags: []cli.Flag{
 					cli.StringFlag{
 						Name:  "path",
-						Usage: "Path to vhd.",
+						Usage: "Path to VHD.",
 					},
 				},
 				Action: showVhdFooter,
@@ -67,7 +67,7 @@ func vhdInspectCmdHandler() cli.Command {
 				Flags: []cli.Flag{
 					cli.StringFlag{
 						Name:  "path",
-						Usage: "Path to vhd.",
+						Usage: "Path to VHD.",
 					},
 					cli.StringFlag{
 						Name: "start-range",
@@ -94,7 +94,7 @@ func vhdInspectCmdHandler() cli.Command {
 						Flags: []cli.Flag{
 							cli.StringFlag{
 								Name:  "path",
-								Usage: "Path to vhd.",
+								Usage: "Path to VHD.",
 							},
 						},
 						Action: showVhdBlocksInfo,
@@ -105,7 +105,7 @@ func vhdInspectCmdHandler() cli.Command {
 						Flags: []cli.Flag{
 							cli.StringFlag{
 								Name:  "path",
-								Usage: "Path to vhd.",
+								Usage: "Path to VHD.",
 							},
 							cli.StringFlag{
 								Name:  "block-index",

@@ -7,6 +7,14 @@ This project provides a Go package to read Virtual Hard Disk (VHD) file, a CLI i
 
     go get github.com/Microsoft/azure-vhd-utils-for-go
 
+### Dependencies 
+    
+    The project has dependency on following Go packages
+    1. https://github.com/codegangsta/cli
+            This package is used to expose CLI interface.
+    2. https://github.com/Azure/azure-sdk-for-go
+            This package is used to make Microsoft Azure storage API calls.
+
 # Usage
 
 ### Upload local VHD to Azure storage as page blob
@@ -39,13 +47,15 @@ VBoxManage modifyhd <absolute path to file> --resize &lt;size in MB&gt;
 
 ##### For Hyper V:
 ----------------
-Resize-VHD -Path <absolute path to file> -SizeBytes &lt;size&gt;
-  Azure Help: http://azure.microsoft.com/blog/2014/05/22/running-freebsd-in-azure/
+Resize-VHD -Path <absolute path to file> -SizeBytes 
+
+     http://azure.microsoft.com/blog/2014/05/22/running-freebsd-in-azure/
 
 ##### For Qemu:
 -------------
 qemu-img resize &lt;path-to-raw-file&gt; size
-  Azure Help: http://azure.microsoft.com/en-us/documentation/articles/virtual-machines-linux-create-upload-vhd-generic/
+
+     http://azure.microsoft.com/en-us/documentation/articles/virtual-machines-linux-create-upload-vhd-generic/
  
 #### How upload work
 
