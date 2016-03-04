@@ -89,9 +89,7 @@ L:
 		}
 	}
 
-	fmt.Println("\n  Waiting for all worker to finish")
 	<-allWorkersFinishedChan
-	fmt.Println("\n  All workers finished")
 	uploadProgress.Close()
 	return err
 }

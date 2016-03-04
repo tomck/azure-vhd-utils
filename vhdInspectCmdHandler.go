@@ -347,7 +347,7 @@ func showVhdBlockBitmap(c *cli.Context) {
 }
 
 func templatePath(fileName string) string {
-	return filepath.Join("vhdmanagement", "templates", fileName)
+	return filepath.Join( "templates", fileName)
 }
 
 func createEmptyBitmapString(bytesPerLine, bitsPerLine, bitmapSizeInBytes int32) string {
