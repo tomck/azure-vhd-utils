@@ -3,6 +3,8 @@
 
 This project provides a Go package to read Virtual Hard Disk (VHD) file, a CLI interface to upload local VHD to Azure storage and to inspect a local VHD.
 
+An implementation of VHD [VHD specification](https://technet.microsoft.com/en-us/virtualization/bb676673.aspx) can be found in the [vhdcore](/vhdcore) package. 
+
 # Installation
 
     go get github.com/Microsoft/azure-vhd-utils-for-go
