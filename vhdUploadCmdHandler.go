@@ -11,6 +11,8 @@ import (
 	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/diskstream"
 	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/common"
 	"github.com/Microsoft/azure-vhd-utils-for-go/upload"
+	"github.com/Microsoft/azure-vhd-utils-for-go/upload/metadata"
+	"fmt"
 )
 
 func vhdUploadCmdHandler() cli.Command {
@@ -44,7 +46,7 @@ func vhdUploadCmdHandler() cli.Command {
 			},
 			cli.BoolFlag{
 				Name:  "overwrite",
-				Usage: "Overwrite the blob if already exists. <not implemented>",
+				Usage: "Overwrite the blob if already exists.",
 			},
 		},
 		Action: func (c *cli.Context) {
@@ -92,14 +94,14 @@ func vhdUploadCmdHandler() cli.Command {
 				log.Printf("Using default parallelism [8*NumCPU] : %d\n", parallelism)
 			}
 
-			var err error
-			if err = validator.ValidateVhd(localVHDPath); err != nil {
-				log.Fatal(err)
-			}
+			overwrite := c.IsSet("overwrite")
 
-			if err = validator.ValidateVhdSize(localVHDPath); err != nil {
+			ensureVHDSanity(localVHDPath)
+			diskStream, err := diskstream.CreateNewDiskStream(localVHDPath)
+			if err != nil {
 				log.Fatal(err)
 			}
+			defer diskStream.Close()
 
 			storageClient, err := storage.NewBasicClient(stgAccountName, stgAccountKey)
 			if err != nil {
@@ -110,17 +112,32 @@ func vhdUploadCmdHandler() cli.Command {
 				log.Fatal(err)
 			}
 
-			diskStream, err := diskstream.CreateNewDiskStream(localVHDPath)
+			blobExists, err := blobServiceClient.BlobExists(containerName, blobName)
 			if err != nil {
-				panic(err)
-			}
-			defer diskStream.Close()
-
-			if err = blobServiceClient.PutPageBlob(containerName, blobName, diskStream.GetSize(), nil); err != nil {
 				log.Fatal(err)
 			}
 
-			var rangesToSkip = make([]*common.IndexRange, 0)
+			resume := false
+			var blobMetaData *metadata.MetaData
+			if blobExists {
+				if !overwrite {
+					blobMetaData = getBlobMetaData(blobServiceClient, containerName, blobName)
+					resume = true
+					log.Printf("Blob with name '%s' already exists, checking upload can be resumed\n", blobName)
+				}
+			}
+
+			localMetaData := getLocalVHDMetaData(localVHDPath)
+			var rangesToSkip []*common.IndexRange
+			if resume {
+				if errs := metadata.CompareMetaData(blobMetaData, localMetaData); len(errs) != 0 {
+					printErrorsAndFatal(errs)
+				}
+				rangesToSkip = getAlreadyUploadedBlobRanges(blobServiceClient, containerName, blobName)
+			} else {
+				createBlob(blobServiceClient, containerName, blobName, diskStream.GetSize(), localMetaData)
+			}
+
 			uploadableRanges, err := upload.LocateUploadableRanges(diskStream, rangesToSkip, PageBlobPageSize)
 			if err != nil {
 				log.Fatal(err)
@@ -134,10 +151,13 @@ func vhdUploadCmdHandler() cli.Command {
 			cxt := &upload.DiskUploadContext{
 				VhdStream: diskStream,
 				UploadableRanges: uploadableRanges,
+				AlreadyProcessedBytes: common.TotalRangeLength(rangesToSkip),
 				BlobServiceClient: blobServiceClient,
 				ContainerName: containerName,
 				BlobName: blobName,
 				Parallelism: parallelism,
+				Resume: resume,
+				MD5Hash: localMetaData.FileMetaData.MD5Hash,
 			}
 
 			err = upload.Upload(cxt)
@@ -148,4 +168,100 @@ func vhdUploadCmdHandler() cli.Command {
 	}
 }
 
+// printErrorsAndFatal prints the errors in a slice one by one and then exit
+//
+func printErrorsAndFatal(errs []error) {
+	fmt.Println()
+	for _, e := range errs {
+		fmt.Println(e)
+	}
+	log.Fatal("Cannot continue due to above errors.")
+}
 
+// ensureVHDSanity ensure is VHD is valid for Azure.
+//
+func ensureVHDSanity(localVHDPath string) {
+	if err := validator.ValidateVhd(localVHDPath); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := validator.ValidateVhdSize(localVHDPath); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// getBlobMetaData returns the custom metadata associated with a page blob which is set by createBlob method.
+// The parameter client is the Azure blob service client, parameter containerName is the name of an existing container
+// in which the page blob resides, parameter blobName is name for the page blob
+// This method attempt to fetch the metadata only if MD5Hash is not set for the page blob, this method panic if the
+// MD5Hash is already set or if the custom metadata is absent.
+//
+func getBlobMetaData(client storage.BlobStorageClient, containerName, blobName string) *metadata.MetaData {
+	md5Hash := getBlobMD5Hash(client, containerName, blobName)
+	if md5Hash != "" {
+		log.Fatalf("VHD exists in blob storage with name '%s'. If you want to upload again, use the --overwrite option.", blobName)
+	}
+
+	blobMetaData, err := metadata.NewMetadataFromBlob(client, containerName, blobName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if blobMetaData == nil {
+		log.Fatalf("There is no upload metadata associated with the existing blob '%s', so upload operation cannot be resumed, use --overwrite option.", blobName)
+	}
+	return blobMetaData
+}
+
+// getLocalVHDMetaData returns the metadata of a local VHD
+//
+func getLocalVHDMetaData(localVHDPath string) *metadata.MetaData {
+	localMetaData, err := metadata.NewMetaDataFromLocalVHD(localVHDPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return localMetaData
+}
+
+// createBlob creates a page blob of specific size and sets custom metadata
+// The parameter client is the Azure blob service client, parameter containerName is the name of an existing container
+// in which the page blob needs to be created, parameter blobName is name for the new page blob, size is the size of
+// the new page blob in bytes and parameter vhdMetaData is the custom metadata to be associacted with the page blob
+//
+func createBlob(client storage.BlobStorageClient, containerName, blobName string, size int64, vhdMetaData *metadata.MetaData) {
+	if err := client.PutPageBlob(containerName, blobName, size, nil); err != nil {
+		log.Fatal(err)
+	}
+	m, _ := vhdMetaData.ToMap()
+	if err := client.SetBlobMetadata(containerName, blobName, m); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// getAlreadyUploadedBlobRanges returns the range slice containing ranges of a page blob those are already uploaded.
+// The parameter client is the Azure blob service client, parameter containerName is the name of an existing container
+// in which the page blob resides, parameter blobName is name for the page blob
+//
+func getAlreadyUploadedBlobRanges(client storage.BlobStorageClient, containerName, blobName string) []*common.IndexRange {
+	existingRanges, err := client.GetPageRanges(containerName, blobName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var rangesToSkip = make([]*common.IndexRange, len(existingRanges.PageList))
+	for i, r := range existingRanges.PageList {
+		rangesToSkip[i] = common.NewIndexRange(r.Start, r.End)
+	}
+	return rangesToSkip
+}
+
+// getBlobMD5Hash returns the MD5Hash associated with a blob
+// The parameter client is the Azure blob service client, parameter containerName is the name of an existing container
+// in which the page blob resides, parameter blobName is name for the page blob
+//
+func getBlobMD5Hash(client storage.BlobStorageClient, containerName, blobName string) string {
+	properties, err := client.GetBlobProperties(containerName, blobName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return properties.ContentMD5
+}

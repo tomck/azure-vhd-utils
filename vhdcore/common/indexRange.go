@@ -26,6 +26,16 @@ func NewIndexRangeFromLength(start, length int64) *IndexRange {
 	return NewIndexRange(start, start+length-1)
 }
 
+// TotalRangeLength returns the total length of a given slice of ranges.
+//
+func TotalRangeLength(ranges []*IndexRange) int64 {
+	var length = int64(0)
+	for _, r := range ranges {
+		length += r.Length()
+	}
+	return length
+}
+
 // SubtractRanges produces a set of ranges, each subset of ranges in this set is produced by
 // subtracting subtrahends from each range in minuends.
 //
