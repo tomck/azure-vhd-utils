@@ -344,6 +344,9 @@ func (ir *IndexRange) String() string {
 // and returns the updated slice.
 //
 func sortAndDedup(indexRanges []*IndexRange) []*IndexRange {
+	if len(indexRanges) == 0 {
+		return indexRanges
+	}
 	sort.Sort(indexRangeSorter(indexRanges))
 	i := 0
 	for j := 1; j < len(indexRanges); j++ {

@@ -132,5 +132,5 @@ func (s *Status) processTime() time.Duration {
 // throughputMBs returns the throughput in MB
 //
 func (s *Status) throughputMBs() float64 {
-	return float64(s.bytesProcessed-s.alreadyProcessedBytes) / oneMB / s.processTime().Seconds()
+	return float64(s.bytesProcessed) / oneMB / s.processTime().Seconds()
 }

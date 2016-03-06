@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/common"
 	"io"
-	"log"
+	"fmt"
 )
 
 // bufferSizeInBytes is the size of the buffer used by BinaryReader
@@ -149,7 +149,7 @@ func (b *BinaryReader) ReadUUID(off int64) (*common.UUID, error) {
 //
 func (b *BinaryReader) readToBuffer(numBytes int, off int64) (int, error) {
 	if numBytes > bufferSizeInBytes {
-		log.Panicf("Expected (0-%d) however found: %d", bufferSizeInBytes, numBytes)
+		fmt.Errorf("Expected (0-%d) however found: %d", bufferSizeInBytes, numBytes)
 	}
 
 	return b.from.ReadAt(b.buffer[:numBytes], off)
