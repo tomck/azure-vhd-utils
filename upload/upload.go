@@ -48,8 +48,9 @@ func Upload(cxt *DiskUploadContext) error {
 	for _, r := range cxt.UploadableRanges {
 		uploadSizeInBytes += r.Length()
 	}
+
 	// Prepare and start the upload progress tracker
-	uploadProgress := progress.NewStatus(cxt.Parallelism, cxt.AlreadyProcessedBytes, uploadSizeInBytes, progress.NewComputestateDefaultSize())
+	uploadProgress := progress.NewStatus(cxt.Parallelism, cxt.AlreadyProcessedBytes, uploadSizeInBytes+cxt.AlreadyProcessedBytes, progress.NewComputestateDefaultSize())
 	progressChan := uploadProgress.Run()
 	// read progress status from progress tracker and print it
 	go readAndPrintProgress(progressChan, cxt.Resume)

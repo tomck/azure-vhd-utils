@@ -25,7 +25,7 @@ func NewBitMapFromByteSliceCopy(b []byte) *BitMap {
 	return &BitMap{data: data, Length: int32(len(b)) * 8}
 }
 
-// Set sets the bit at the given index. It is panic to set a value if idx < 0 or idx >= bitsCount.
+// Set sets the bit at the given index. It returns error if idx < 0 or idx >= bitsCount.
 //
 func (b *BitMap) Set(idx int32, value bool) error {
 	if idx < 0 || idx >= b.Length {
@@ -44,7 +44,7 @@ func (b *BitMap) Set(idx int32, value bool) error {
 	return nil
 }
 
-// Get returns the value of the bit at the given index. It is panic to get a value if idx < 0 or idx >= bitsCount.
+// Get returns the value of the bit at the given index. It returns error if idx < 0 or idx >= bitsCount.
 //
 func (b *BitMap) Get(idx int32) (bool, error) {
 	if idx < 0 || idx >= b.Length {
