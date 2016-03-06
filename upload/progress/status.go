@@ -41,6 +41,7 @@ const nanosecondsInOneSecond = 1000 * 1000 * 1000
 func NewStatus(reportersCount int, alreadyProcessedBytes, totalBytes int64, computeStats *ComputeStats) *Status {
 	return &Status{
 		bytesProcessedCountChan: make(chan int64, reportersCount),
+		doneChan:                make(chan bool, 0),
 		totalBytes:              totalBytes,
 		alreadyProcessedBytes:   alreadyProcessedBytes,
 		startTime:               time.Now(),

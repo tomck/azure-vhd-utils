@@ -16,12 +16,15 @@ import (
 // the number of parallel go-routines to use for upload.
 //
 type DiskUploadContext struct {
-	VhdStream         *diskstream.DiskStream
-	UploadableRanges  []*common.IndexRange
-	BlobServiceClient storage.BlobStorageClient
-	ContainerName     string
-	BlobName          string
-	Parallelism       int
+	VhdStream             *diskstream.DiskStream    // The stream whose ranges needs to be uploaded
+	AlreadyProcessedBytes int64                     // The size in bytes already uploaded
+	UploadableRanges      []*common.IndexRange      // The subset of stream ranges to be uploaded
+	BlobServiceClient     storage.BlobStorageClient // The client to make Azure blob service API calls
+	ContainerName         string                    // The container in which page blob resides
+	BlobName              string                    // The destination page blob name
+	Parallelism           int                       // The number of concurrent goroutines to be used for upload
+	Resume                bool                      // Indicate whether this is a new or resuming upload
+	MD5Hash               []byte                    // MD5Hash to be set in the page blob properties once upload finishes
 }
 
 // Upload uploads the disk ranges described by the parameter cxt, this parameter describes the disk stream to
@@ -46,10 +49,10 @@ func Upload(cxt *DiskUploadContext) error {
 		uploadSizeInBytes += r.Length()
 	}
 	// Prepare and start the upload progress tracker
-	uploadProgress := progress.NewStatus(cxt.Parallelism, 0, uploadSizeInBytes, progress.NewComputestateDefaultSize())
+	uploadProgress := progress.NewStatus(cxt.Parallelism, cxt.AlreadyProcessedBytes, uploadSizeInBytes, progress.NewComputestateDefaultSize())
 	progressChan := uploadProgress.Run()
 	// read progress status from progress tracker and print it
-	go readAndPrintProgress(progressChan)
+	go readAndPrintProgress(progressChan, cxt.Resume)
 
 	go func() {
 		for {
@@ -91,6 +94,10 @@ L:
 
 	<-allWorkersFinishedChan
 	uploadProgress.Close()
+	if err == nil {
+		// TODO: Set MD5 Hash for the PageBlob, the Storage SDK does not implement method to set BlobProperties
+		// https://msdn.microsoft.com/en-us/library/azure/ee691966.aspx
+	}
 	return err
 }
 
@@ -128,9 +135,14 @@ func GetDataWithRanges(stream *diskstream.DiskStream, ranges []*common.IndexRang
 // readAndPrintProgress reads the progress records from the given progress channel and output it. It reads the
 // progress record until the channel is closed.
 //
-func readAndPrintProgress(progressChan <-chan *progress.Record) {
+func readAndPrintProgress(progressChan <-chan *progress.Record, resume bool) {
 	s := time.Time{}
-	fmt.Println("\nUploading the VHD..")
+	if resume {
+		fmt.Println("\nResuming VHD upload..")
+	} else {
+		fmt.Println("\nUploading the VHD..")
+	}
+
 	for progressRecord := range progressChan {
 		t := s.Add(progressRecord.RemainingDuration)
 		fmt.Printf("\r Completed: %3d%% RemainingTime: %02dh:%02dm:%02ds Throughput: %d MB/sec",

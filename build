@@ -3,6 +3,7 @@
 packages=(
         ./upload/
         ./upload/concurrent/
+        ./upload/metadata/
         ./upload/progress/
         ./vhdcore/
         ./vhdcore/bat/
