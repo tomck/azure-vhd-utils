@@ -164,7 +164,7 @@ func vhdUploadCmdHandler() cli.Command {
 			if err != nil {
 				log.Fatal(err)
 			} else {
-				fmt.Println("Upload completed")
+				fmt.Println("\nUpload completed")
 			}
 		},
 	}
