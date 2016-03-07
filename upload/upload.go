@@ -50,7 +50,7 @@ func Upload(cxt *DiskUploadContext) error {
 	}
 
 	// Prepare and start the upload progress tracker
-	uploadProgress := progress.NewStatus(cxt.Parallelism, cxt.AlreadyProcessedBytes, uploadSizeInBytes+cxt.AlreadyProcessedBytes, progress.NewComputestateDefaultSize())
+	uploadProgress := progress.NewStatus(cxt.Parallelism, cxt.AlreadyProcessedBytes, uploadSizeInBytes, progress.NewComputestateDefaultSize())
 	progressChan := uploadProgress.Run()
 	// read progress status from progress tracker and print it
 	go readAndPrintProgress(progressChan, cxt.Resume)
@@ -73,7 +73,13 @@ L:
 
 			req := &concurrent.Request{
 				Work: func() error {
-					err := cxt.BlobServiceClient.PutPage(cxt.ContainerName, cxt.BlobName, dataWithRange.Range.Start, dataWithRange.Range.End, storage.PageWriteTypeUpdate, dataWithRange.Data)
+					err := cxt.BlobServiceClient.PutPage(cxt.ContainerName,
+						cxt.BlobName,
+						dataWithRange.Range.Start,
+						dataWithRange.Range.End,
+						storage.PageWriteTypeUpdate,
+						dataWithRange.Data,
+						nil)
 					if err == nil {
 						uploadProgress.ReportBytesProcessedCount(dataWithRange.Range.Length())
 					}
@@ -137,6 +143,7 @@ func GetDataWithRanges(stream *diskstream.DiskStream, ranges []*common.IndexRang
 // progress record until the channel is closed.
 //
 func readAndPrintProgress(progressChan <-chan *progress.Record, resume bool) {
+	var spinChars = [4]rune{'\\', '|', '/', '-'}
 	s := time.Time{}
 	if resume {
 		fmt.Println("\nResuming VHD upload..")
@@ -144,12 +151,18 @@ func readAndPrintProgress(progressChan <-chan *progress.Record, resume bool) {
 		fmt.Println("\nUploading the VHD..")
 	}
 
+	i := 0
 	for progressRecord := range progressChan {
+		if i == 4 {
+			i = 0
+		}
 		t := s.Add(progressRecord.RemainingDuration)
-		fmt.Printf("\r Completed: %3d%% RemainingTime: %02dh:%02dm:%02ds Throughput: %d MB/sec",
+		fmt.Printf("\r Completed: %3d%% RemainingTime: %02dh:%02dm:%02ds Throughput: %d MB/sec  %2c ",
 			int(progressRecord.PercentComplete),
 			t.Hour(), t.Minute(), t.Second(),
 			int(progressRecord.AverageThroughputMBPerSecond),
+			spinChars[i],
 		)
+		i++
 	}
 }
