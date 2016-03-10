@@ -27,6 +27,10 @@ type DiskUploadContext struct {
 	MD5Hash               []byte                    // MD5Hash to be set in the page blob properties once upload finishes
 }
 
+// oneMB is one MegaByte
+//
+const oneMB = float64(1048576)
+
 // Upload uploads the disk ranges described by the parameter cxt, this parameter describes the disk stream to
 // read from, the ranges of the stream to read, the destination blob and it's container, the client to communicate
 // with Azure storage and the number of parallel go-routines to use for upload.
@@ -48,6 +52,8 @@ func Upload(cxt *DiskUploadContext) error {
 	for _, r := range cxt.UploadableRanges {
 		uploadSizeInBytes += r.Length()
 	}
+
+	fmt.Printf("\nEffective upload size: %.2f MB (from %.2f MB originally)", float64(uploadSizeInBytes)/oneMB, float64(cxt.VhdStream.GetSize())/oneMB)
 
 	// Prepare and start the upload progress tracker
 	uploadProgress := progress.NewStatus(cxt.Parallelism, cxt.AlreadyProcessedBytes, uploadSizeInBytes, progress.NewComputestateDefaultSize())
@@ -104,6 +110,12 @@ L:
 	if err == nil {
 		// TODO: Set MD5 Hash for the PageBlob, the Storage SDK does not implement method to set BlobProperties
 		// https://msdn.microsoft.com/en-us/library/azure/ee691966.aspx
+		fmt.Printf("\r Completed: %3d%% [%10.2f MB] RemainingTime: %02dh:%02dm:%02ds Throughput: %d MB/sec  %2c ",
+			100,
+			float64(uploadSizeInBytes)/oneMB,
+			0, 0, 0,
+			0, ' ')
+
 	}
 	return err
 }
@@ -157,8 +169,9 @@ func readAndPrintProgress(progressChan <-chan *progress.Record, resume bool) {
 			i = 0
 		}
 		t := s.Add(progressRecord.RemainingDuration)
-		fmt.Printf("\r Completed: %3d%% RemainingTime: %02dh:%02dm:%02ds Throughput: %d MB/sec  %2c ",
+		fmt.Printf("\r Completed: %3d%% [%10.2f MB] RemainingTime: %02dh:%02dm:%02ds Throughput: %d MB/sec  %2c ",
 			int(progressRecord.PercentComplete),
+			float64(progressRecord.BytesProcessed)/oneMB,
 			t.Hour(), t.Minute(), t.Second(),
 			int(progressRecord.AverageThroughputMBPerSecond),
 			spinChars[i],
