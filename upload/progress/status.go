@@ -23,6 +23,7 @@ type Record struct {
 	PercentComplete              float64
 	AverageThroughputMBPerSecond float64
 	RemainingDuration            time.Duration
+	BytesProcessed               int64
 }
 
 // oneMB is one MegaByte
@@ -101,6 +102,7 @@ Loop:
 			progressRecord.PercentComplete = s.percentComplete()
 			progressRecord.RemainingDuration = time.Duration(nanosecondsInOneSecond * remainingSeconds)
 			progressRecord.AverageThroughputMBPerSecond = avtThroughputMbps
+			progressRecord.BytesProcessed = s.bytesProcessed
 
 			outChan <- progressRecord
 		case <-s.doneChan:
