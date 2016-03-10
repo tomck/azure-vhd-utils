@@ -5,6 +5,11 @@ This project provides a Go package to read Virtual Hard Disk (VHD) file, a CLI i
 
 An implementation of VHD [VHD specification](https://technet.microsoft.com/en-us/virtualization/bb676673.aspx) can be found in the [vhdcore](/vhdcore) package. 
 
+# Prerequisite
+
+1. You need to have Go runtime installed, you can get the latest stable Go version from [https://golang.org/dl/](https://golang.org/dl/)
+2. The GOPATH environment variable must be defined, which specifices the location of your workspace. Refer [https://golang.org/doc/code.html#GOPATH](https://golang.org/doc/code.html#GOPATH) for the instructions to set GOPATH.
+
 # Installation
 
     go get github.com/Microsoft/azure-vhd-utils-for-go
