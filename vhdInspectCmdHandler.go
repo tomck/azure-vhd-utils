@@ -5,7 +5,6 @@ import (
 	"github.com/codegangsta/cli"
 	"os"
 	"text/template"
-	"path/filepath"
 	"encoding/hex"
 	"log"
 	"strconv"
@@ -120,8 +119,31 @@ func vhdInspectCmdHandler() cli.Command {
 	}
 }
 
+const headerTempl = `Cookie            : {{.Cookie }}
+DataOffset        : {{.DataOffset}}
+TableOffset       : {{.TableOffset}}
+HeaderVersion     : {{.HeaderVersion}}
+MaxTableEntries   : {{.MaxTableEntries}}
+BlockSize         : {{.BlockSize}} bytes
+CheckSum          : {{.CheckSum}}
+ParentUniqueID    : {{.ParentUniqueID}}
+ParentTimeStamp   : {{.ParentTimeStamp | printf "%v"}}
+Reserved          : {{.Reserved}}
+ParentPath        : {{.ParentPath}}
+{{range .ParentLocators}}
+  PlatformCode               : {{.PlatformCode}}
+  PlatformDataSpace          : {{.PlatformDataSpace}}
+  PlatformDataLength         : {{.PlatformDataLength}}
+  Reserved                   : {{.Reserved}}
+  PlatformDataOffset         : {{.PlatformDataOffset}}
+  PlatformSpecificFileLocator: {{.PlatformSpecificFileLocator}}
+{{end}}
+
+-- Hex dump --
+
+{{.RawData | dump }}`
+
 func showVhdHeader(c *cli.Context) {
-	const templateFile = "header.tpl"
 	vhdPath := c.String("path")
 	if vhdPath == "" {
 		log.Fatalln("Missing required argument --path")
@@ -140,12 +162,31 @@ func showVhdHeader(c *cli.Context) {
 
 	t, err := template.New("root").
 		Funcs(template.FuncMap{"dump": hex.Dump}).
-		ParseFiles(templatePath(templateFile))
-	t.ExecuteTemplate(os.Stdout, templateFile, vFile.Header)
+		Parse(headerTempl)
+	t.Execute(os.Stdout, vFile.Header)
 }
 
+const footerTempl = `Cookie            : {{.Cookie }}
+Features          : {{.Features}}
+FileFormatVersion : {{.FileFormatVersion}}
+HeaderOffset      : {{.HeaderOffset}}
+TimeStamp         : {{.TimeStamp | printf "%v" }}
+CreatorApplication: {{.CreatorApplication}}
+CreatorVersion    : {{.CreatorVersion}}
+CreatorHostOsType : {{.CreatorHostOsType}}
+PhysicalSize      : {{.PhysicalSize}} bytes
+VirtualSize       : {{.VirtualSize}} bytes
+DiskGeometry      : {{.DiskGeometry}}
+DiskType          : {{.DiskType}}
+CheckSum          : {{.CheckSum}}
+UniqueID          : {{.UniqueID}}
+SavedState        : {{.SavedState | printf "%v" }}
+
+-- Hex dump --
+
+{{.RawData | dump }}`
+
 func showVhdFooter(c *cli.Context) {
-	const templateFile = "footer.tpl"
 	vhdPath := c.String("path")
 	if vhdPath == "" {
 		log.Fatalln("Missing required argument --path")
@@ -160,12 +201,14 @@ func showVhdFooter(c *cli.Context) {
 	defer vFileFactory.Dispose(nil)
 	t, err := template.New("root").
 		Funcs(template.FuncMap{"dump": hex.Dump}).
-		ParseFiles(templatePath(templateFile))
-	t.ExecuteTemplate(os.Stdout, templateFile, vFile.Footer)
+		Parse(footerTempl)
+	t.Execute(os.Stdout, vFile.Footer)
 }
 
+const batTempl = `{{range $index, $value := .}} BAT[{{adj $index}}] : {{$value | printf "0x%X"}}
+{{end}}`
+
 func showVhdBAT(c *cli.Context) {
-	const templateFile = "bat.tpl"
 	vhdPath := c.String("path")
 	if vhdPath == "" {
 		log.Fatalln("Missing required argument --path")
@@ -222,10 +265,10 @@ func showVhdBAT(c *cli.Context) {
 
 	t, _ := template.New("root").
 		Funcs(fMap).
-		ParseFiles(templatePath(templateFile))
+		Parse(batTempl)
 
 	if !c.IsSet("skip-empty") {
-		t.ExecuteTemplate(os.Stdout, templateFile, vFile.BlockAllocationTable.BAT[startRange : endRange + 1])
+		t.Execute(os.Stdout, vFile.BlockAllocationTable.BAT[startRange : endRange + 1])
 	} else {
 		nonEmptyBATEntries := make(map[int]uint32)
 		for blockIndex := startRange; blockIndex <= endRange; blockIndex++ {
@@ -234,14 +277,23 @@ func showVhdBAT(c *cli.Context) {
 			}
 		}
 
-		t.ExecuteTemplate(os.Stdout, templateFile, nonEmptyBATEntries)
+		t.Execute(os.Stdout, nonEmptyBATEntries)
 	}
 }
 
-func showVhdBlocksInfo(c *cli.Context) {
-	const templateFileFixed = "blocksinfofixed.tpl"
-	const templateFileExpandable = "blocksinfoexpandable.tpl"
+const fixedDiskBlockInfoTempl = `Block sector size : 512 bytes
+Block size        : {{.BlockSize}} bytes
+Total blocks      : {{.BlockCount}}
+`
 
+const expandableDiskBlockInfoTempl = `Block sector size                  : 512 bytes
+Block data section size            : {{.BlockDataSize}} bytes
+Block bitmap section size          : {{.BlockBitmapSize}} bytes
+Block bitmap section size (padded) : {{.BlockBitmapPaddedSize}} bytes
+Total blocks                       : {{.BlockCount}} (Used: {{.UsedBlockCount}} Empty: {{.EmptyBlockCount}})
+`
+
+func showVhdBlocksInfo(c *cli.Context) {
 	vhdPath := c.String("path")
 	if vhdPath == "" {
 		log.Fatalln("Missing required argument --path")
@@ -268,8 +320,8 @@ func showVhdBlocksInfo(c *cli.Context) {
 		// block and checking it contains all zeros, which is time consuming so we don't
 		// show those information.
 		t, _ := template.New("root").
-		ParseFiles(templatePath(templateFileFixed))
-		t.ExecuteTemplate(os.Stdout, templateFileFixed, info)
+		Parse(fixedDiskBlockInfoTempl)
+		t.Execute(os.Stdout, info)
 	} else {
 		info := &ExpandableDiskBlocksInfo {
 			BlockDataSize: vBlockFactory.GetBlockSize(),
@@ -287,8 +339,8 @@ func showVhdBlocksInfo(c *cli.Context) {
 		}
 
 		t, _ := template.New("root").
-		ParseFiles(templatePath(templateFileExpandable))
-		t.ExecuteTemplate(os.Stdout, templateFileExpandable, info)
+		Parse(expandableDiskBlockInfoTempl)
+		t.Execute(os.Stdout, info)
 	}
 }
 
@@ -344,10 +396,6 @@ func showVhdBlockBitmap(c *cli.Context) {
 	}
 
 	fmt.Print(createBitmapString(bitsPerLine, vBlock.BitMap))
-}
-
-func templatePath(fileName string) string {
-	return filepath.Join( "templates", fileName)
 }
 
 func createEmptyBitmapString(bytesPerLine, bitsPerLine, bitmapSizeInBytes int32) string {
