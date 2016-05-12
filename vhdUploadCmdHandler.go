@@ -235,7 +235,7 @@ func createBlob(client storage.BlobStorageClient, containerName, blobName string
 		log.Fatal(err)
 	}
 	m, _ := vhdMetaData.ToMap()
-	if err := client.SetBlobMetadata(containerName, blobName, m); err != nil {
+	if err := client.SetBlobMetadata(containerName, blobName, m, make(map[string]string)); err != nil {
 		log.Fatal(err)
 	}
 }
