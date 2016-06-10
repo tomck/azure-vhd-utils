@@ -1,47 +1,49 @@
 package main
 
 import (
-	"github.com/codegangsta/cli"
-	"strings"
+	"errors"
+	"fmt"
 	"log"
-	"strconv"
 	"runtime"
+	"strconv"
+	"strings"
+
 	"github.com/Azure/azure-sdk-for-go/storage"
-	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/validator"
-	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/diskstream"
-	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/common"
 	"github.com/Microsoft/azure-vhd-utils-for-go/upload"
 	"github.com/Microsoft/azure-vhd-utils-for-go/upload/metadata"
-	"fmt"
+	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/common"
+	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/diskstream"
+	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/validator"
+	"github.com/codegangsta/cli"
 )
 
 func vhdUploadCmdHandler() cli.Command {
 	return cli.Command{
 		Name:  "upload",
-		Usage:  "Upload a local VHD to Azure storage as page blob",
+		Usage: "Upload a local VHD to Azure storage as page blob",
 		Flags: []cli.Flag{
 			cli.StringFlag{
 				Name:  "localvhdpath",
 				Usage: "Path to source VHD in the local machine.",
 			},
 			cli.StringFlag{
-				Name: "stgaccountname",
+				Name:  "stgaccountname",
 				Usage: "Azure storage account name.",
 			},
 			cli.StringFlag{
-				Name: "stgaccountkey",
+				Name:  "stgaccountkey",
 				Usage: "Azure storage account key.",
 			},
 			cli.StringFlag{
-				Name: "containername",
+				Name:  "containername",
 				Usage: "Name of the container holding destination page blob. (Default: vhds)",
 			},
 			cli.StringFlag{
-				Name: "blobname",
+				Name:  "blobname",
 				Usage: "Name of the destination page blob.",
 			},
 			cli.StringFlag{
-				Name: "parallelism",
+				Name:  "parallelism",
 				Usage: "Number of concurrent goroutines to be used for upload",
 			},
 			cli.BoolFlag{
@@ -49,22 +51,22 @@ func vhdUploadCmdHandler() cli.Command {
 				Usage: "Overwrite the blob if already exists.",
 			},
 		},
-		Action: func (c *cli.Context) {
+		Action: func(c *cli.Context) error {
 			const PageBlobPageSize int64 = 2 * 1024 * 1024
 
 			localVHDPath := c.String("localvhdpath")
 			if localVHDPath == "" {
-				log.Fatalln("Missing required argument --localvhdpath")
+				return errors.New("Missing required argument --localvhdpath")
 			}
 
 			stgAccountName := c.String("stgaccountname")
 			if stgAccountName == "" {
-				log.Fatalln("Missing required argument --stgaccountname")
+				return errors.New("Missing required argument --stgaccountname")
 			}
 
 			stgAccountKey := c.String("stgaccountkey")
 			if stgAccountKey == "" {
-				log.Fatalln("Missing required argument --stgaccountkey")
+				return errors.New("Missing required argument --stgaccountkey")
 			}
 
 			containerName := c.String("containername")
@@ -75,7 +77,7 @@ func vhdUploadCmdHandler() cli.Command {
 
 			blobName := c.String("blobname")
 			if blobName == "" {
-				log.Fatalln("Missing required argument --blobname")
+				return errors.New("Missing required argument --blobname")
 			}
 
 			if !strings.HasSuffix(strings.ToLower(blobName), ".vhd") {
@@ -86,7 +88,7 @@ func vhdUploadCmdHandler() cli.Command {
 			if c.IsSet("parallelism") {
 				p, err := strconv.ParseUint(c.String("parallelism"), 10, 32)
 				if err != nil {
-					log.Fatalln("invalid index value --parallelism: %s", err)
+					return fmt.Errorf("invalid index value --parallelism: %s", err)
 				}
 				parallelism = int(p)
 			} else {
@@ -99,22 +101,22 @@ func vhdUploadCmdHandler() cli.Command {
 			ensureVHDSanity(localVHDPath)
 			diskStream, err := diskstream.CreateNewDiskStream(localVHDPath)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			defer diskStream.Close()
 
 			storageClient, err := storage.NewBasicClient(stgAccountName, stgAccountKey)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			blobServiceClient := storageClient.GetBlobService()
 			if _, err = blobServiceClient.CreateContainerIfNotExists(containerName, storage.ContainerAccessTypePrivate); err != nil {
-				log.Fatal(err)
+				return err
 			}
 
 			blobExists, err := blobServiceClient.BlobExists(containerName, blobName)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 
 			resume := false
@@ -140,32 +142,34 @@ func vhdUploadCmdHandler() cli.Command {
 
 			uploadableRanges, err := upload.LocateUploadableRanges(diskStream, rangesToSkip, PageBlobPageSize)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 
 			uploadableRanges, err = upload.DetectEmptyRanges(diskStream, uploadableRanges)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 
 			cxt := &upload.DiskUploadContext{
-				VhdStream: diskStream,
-				UploadableRanges: uploadableRanges,
+				VhdStream:             diskStream,
+				UploadableRanges:      uploadableRanges,
 				AlreadyProcessedBytes: common.TotalRangeLength(rangesToSkip),
-				BlobServiceClient: blobServiceClient,
-				ContainerName: containerName,
-				BlobName: blobName,
-				Parallelism: parallelism,
-				Resume: resume,
-				MD5Hash: localMetaData.FileMetaData.MD5Hash,
+				BlobServiceClient:     blobServiceClient,
+				ContainerName:         containerName,
+				BlobName:              blobName,
+				Parallelism:           parallelism,
+				Resume:                resume,
+				MD5Hash:               localMetaData.FileMetaData.MD5Hash,
 			}
 
 			err = upload.Upload(cxt)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			} else {
 				fmt.Println("\nUpload completed")
 			}
+
+			return nil
 		},
 	}
 }
