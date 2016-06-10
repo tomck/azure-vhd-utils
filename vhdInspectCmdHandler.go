@@ -1,18 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"text/template"
+
+	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore"
+	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/block/bitmap"
+	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/footer"
 	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/vhdfile"
 	"github.com/codegangsta/cli"
-	"os"
-	"text/template"
-	"encoding/hex"
-	"log"
-	"strconv"
-	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore"
-	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/footer"
-	"fmt"
-	"bytes"
-	"github.com/Microsoft/azure-vhd-utils-for-go/vhdcore/block/bitmap"
 )
 
 // FixedDiskBlocksInfo type describes general block information of a fixed disk
@@ -36,11 +37,11 @@ type ExpandableDiskBlocksInfo struct {
 func vhdInspectCmdHandler() cli.Command {
 	return cli.Command{
 		Name:  "inspect",
-		Usage:  "Commands to inspect local VHD",
+		Usage: "Commands to inspect local VHD",
 		Subcommands: []cli.Command{
 			{
 				Name:  "header",
-				Usage:  "Show VHD header",
+				Usage: "Show VHD header",
 				Flags: []cli.Flag{
 					cli.StringFlag{
 						Name:  "path",
@@ -51,7 +52,7 @@ func vhdInspectCmdHandler() cli.Command {
 			},
 			{
 				Name:  "footer",
-				Usage:  "Show VHD footer",
+				Usage: "Show VHD footer",
 				Flags: []cli.Flag{
 					cli.StringFlag{
 						Name:  "path",
@@ -62,18 +63,18 @@ func vhdInspectCmdHandler() cli.Command {
 			},
 			{
 				Name:  "bat",
-				Usage:  "Show a range of VHD Block allocation table (BAT) entries",
+				Usage: "Show a range of VHD Block allocation table (BAT) entries",
 				Flags: []cli.Flag{
 					cli.StringFlag{
 						Name:  "path",
 						Usage: "Path to VHD.",
 					},
 					cli.StringFlag{
-						Name: "start-range",
+						Name:  "start-range",
 						Usage: "Start range.",
 					},
 					cli.StringFlag{
-						Name: "end-range",
+						Name:  "end-range",
 						Usage: "End range.",
 					},
 					cli.BoolFlag{
@@ -85,11 +86,11 @@ func vhdInspectCmdHandler() cli.Command {
 			},
 			{
 				Name:  "block",
-				Usage:  "Inspect VHD blocks",
+				Usage: "Inspect VHD blocks",
 				Subcommands: []cli.Command{
 					{
 						Name:  "info",
-						Usage:  "Show blocks general information",
+						Usage: "Show blocks general information",
 						Flags: []cli.Flag{
 							cli.StringFlag{
 								Name:  "path",
@@ -100,7 +101,7 @@ func vhdInspectCmdHandler() cli.Command {
 					},
 					{
 						Name:  "bitmap",
-						Usage:  "Show sector bitmap of a expandable disk's block",
+						Usage: "Show sector bitmap of a expandable disk's block",
 						Flags: []cli.Flag{
 							cli.StringFlag{
 								Name:  "path",
@@ -143,27 +144,29 @@ ParentPath        : {{.ParentPath}}
 
 {{.RawData | dump }}`
 
-func showVhdHeader(c *cli.Context) {
+func showVhdHeader(c *cli.Context) error {
 	vhdPath := c.String("path")
 	if vhdPath == "" {
-		log.Fatalln("Missing required argument --path")
+		return errors.New("Missing required argument --path")
 	}
 
 	vFileFactory := &vhdFile.FileFactory{}
 	vFile, err := vFileFactory.Create(vhdPath)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	defer vFileFactory.Dispose(nil)
 	if vFile.GetDiskType() == footer.DiskTypeFixed {
-		log.Fatalln("Warn: Only expandable VHDs has header structure, this is a fixed VHD")
+		return errors.New("Warn: Only expandable VHDs has header structure, this is a fixed VHD")
 	}
 
 	t, err := template.New("root").
 		Funcs(template.FuncMap{"dump": hex.Dump}).
 		Parse(headerTempl)
 	t.Execute(os.Stdout, vFile.Header)
+
+	return nil
 }
 
 const footerTempl = `Cookie            : {{.Cookie }}
@@ -186,16 +189,16 @@ SavedState        : {{.SavedState | printf "%v" }}
 
 {{.RawData | dump }}`
 
-func showVhdFooter(c *cli.Context) {
+func showVhdFooter(c *cli.Context) error {
 	vhdPath := c.String("path")
 	if vhdPath == "" {
-		log.Fatalln("Missing required argument --path")
+		return errors.New("Missing required argument --path")
 	}
 
 	vFileFactory := &vhdFile.FileFactory{}
 	vFile, err := vFileFactory.Create(vhdPath)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	defer vFileFactory.Dispose(nil)
@@ -203,15 +206,17 @@ func showVhdFooter(c *cli.Context) {
 		Funcs(template.FuncMap{"dump": hex.Dump}).
 		Parse(footerTempl)
 	t.Execute(os.Stdout, vFile.Footer)
+
+	return nil
 }
 
 const batTempl = `{{range $index, $value := .}} BAT[{{adj $index}}] : {{$value | printf "0x%X"}}
 {{end}}`
 
-func showVhdBAT(c *cli.Context) {
+func showVhdBAT(c *cli.Context) error {
 	vhdPath := c.String("path")
 	if vhdPath == "" {
-		log.Fatalln("Missing required argument --path")
+		return errors.New("Missing required argument --path")
 	}
 
 	startRange := uint32(0)
@@ -219,7 +224,7 @@ func showVhdBAT(c *cli.Context) {
 	if c.IsSet("start-range") {
 		r, err := strconv.ParseUint(c.String("start-range"), 10, 32)
 		if err != nil {
-			log.Fatalf("invalid index value --start-range: %s", err)
+			return fmt.Errorf("invalid index value --start-range: %s", err)
 		}
 		startRange = uint32(r)
 	}
@@ -228,7 +233,7 @@ func showVhdBAT(c *cli.Context) {
 	if c.IsSet("end-range") {
 		r, err := strconv.ParseUint(c.String("end-range"), 10, 32)
 		if err != nil {
-			log.Fatalf("invalid index value --end-range: %s", err)
+			return fmt.Errorf("invalid index value --end-range: %s", err)
 		}
 		endRange = uint32(r)
 	}
@@ -236,12 +241,12 @@ func showVhdBAT(c *cli.Context) {
 	vFileFactory := &vhdFile.FileFactory{}
 	vFile, err := vFileFactory.Create(vhdPath)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	defer vFileFactory.Dispose(nil)
 	if vFile.GetDiskType() == footer.DiskTypeFixed {
-		log.Fatalln("Warn: Only expandable VHDs has Block Allocation Table, this is a fixed VHD")
+		return errors.New("Warn: Only expandable VHDs has Block Allocation Table, this is a fixed VHD")
 	}
 
 	maxEntries := vFile.BlockAllocationTable.BATEntriesCount
@@ -250,11 +255,11 @@ func showVhdBAT(c *cli.Context) {
 	}
 
 	if startRange > maxEntries || endRange > maxEntries {
-		log.Fatalf("index out of boundary, this vhd BAT index range is [0, %d]", maxEntries)
+		return fmt.Errorf("index out of boundary, this vhd BAT index range is [0, %d]", maxEntries)
 	}
 
 	if startRange > endRange {
-		log.Fatalln("invalid range --start-range > --end-range")
+		return errors.New("invalid range --start-range > --end-range")
 	}
 
 	fMap := template.FuncMap{
@@ -268,17 +273,19 @@ func showVhdBAT(c *cli.Context) {
 		Parse(batTempl)
 
 	if !c.IsSet("skip-empty") {
-		t.Execute(os.Stdout, vFile.BlockAllocationTable.BAT[startRange : endRange + 1])
+		t.Execute(os.Stdout, vFile.BlockAllocationTable.BAT[startRange:endRange+1])
 	} else {
 		nonEmptyBATEntries := make(map[int]uint32)
 		for blockIndex := startRange; blockIndex <= endRange; blockIndex++ {
 			if vFile.BlockAllocationTable.HasData(blockIndex) {
-				nonEmptyBATEntries[int(blockIndex - startRange)] = vFile.BlockAllocationTable.BAT[blockIndex]
+				nonEmptyBATEntries[int(blockIndex-startRange)] = vFile.BlockAllocationTable.BAT[blockIndex]
 			}
 		}
 
 		t.Execute(os.Stdout, nonEmptyBATEntries)
 	}
+
+	return nil
 }
 
 const fixedDiskBlockInfoTempl = `Block sector size : 512 bytes
@@ -293,10 +300,10 @@ Block bitmap section size (padded) : {{.BlockBitmapPaddedSize}} bytes
 Total blocks                       : {{.BlockCount}} (Used: {{.UsedBlockCount}} Empty: {{.EmptyBlockCount}})
 `
 
-func showVhdBlocksInfo(c *cli.Context) {
+func showVhdBlocksInfo(c *cli.Context) error {
 	vhdPath := c.String("path")
 	if vhdPath == "" {
-		log.Fatalln("Missing required argument --path")
+		return errors.New("Missing required argument --path")
 	}
 
 	vFileFactory := &vhdFile.FileFactory{}
@@ -308,26 +315,29 @@ func showVhdBlocksInfo(c *cli.Context) {
 
 	vBlockFactory, err := vFile.GetBlockFactory()
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	if vFile.GetDiskType() == footer.DiskTypeFixed {
-		info := &FixedDiskBlocksInfo {
-			BlockSize: vBlockFactory.GetBlockSize(),
+		info := &FixedDiskBlocksInfo{
+			BlockSize:  vBlockFactory.GetBlockSize(),
 			BlockCount: vBlockFactory.GetBlockCount(),
 		}
 		// Note: Identifying empty and used blocks of a FixedDisk requires reading each
 		// block and checking it contains all zeros, which is time consuming so we don't
 		// show those information.
-		t, _ := template.New("root").
-		Parse(fixedDiskBlockInfoTempl)
+		t, err := template.New("root").
+			Parse(fixedDiskBlockInfoTempl)
+		if err != nil {
+			return err
+		}
 		t.Execute(os.Stdout, info)
 	} else {
-		info := &ExpandableDiskBlocksInfo {
-			BlockDataSize: vBlockFactory.GetBlockSize(),
-			BlockBitmapSize: vFile.BlockAllocationTable.GetBitmapSizeInBytes(),
+		info := &ExpandableDiskBlocksInfo{
+			BlockDataSize:         vBlockFactory.GetBlockSize(),
+			BlockBitmapSize:       vFile.BlockAllocationTable.GetBitmapSizeInBytes(),
 			BlockBitmapPaddedSize: vFile.BlockAllocationTable.GetSectorPaddedBitmapSizeInBytes(),
-			BlockCount: vBlockFactory.GetBlockCount(),
+			BlockCount:            vBlockFactory.GetBlockCount(),
 		}
 
 		for _, v := range vFile.BlockAllocationTable.BAT {
@@ -338,64 +348,70 @@ func showVhdBlocksInfo(c *cli.Context) {
 			}
 		}
 
-		t, _ := template.New("root").
-		Parse(expandableDiskBlockInfoTempl)
+		t, err := template.New("root").
+			Parse(expandableDiskBlockInfoTempl)
+		if err != nil {
+			return err
+		}
 		t.Execute(os.Stdout, info)
 	}
+
+	return nil
 }
 
-func showVhdBlockBitmap(c *cli.Context) {
+func showVhdBlockBitmap(c *cli.Context) error {
 	const bytesPerLine int32 = 8
-	const bitsPerLine int32  = 8 * bytesPerLine
+	const bitsPerLine int32 = 8 * bytesPerLine
 
 	vhdPath := c.String("path")
 	if vhdPath == "" {
-		log.Fatalln("Missing required argument --path")
+		return errors.New("Missing required argument --path")
 	}
 
 	if !c.IsSet("block-index") {
-		log.Fatalln("Missing required argument --block-index")
+		return errors.New("Missing required argument --block-index")
 	}
 
 	blockIndex := uint32(0)
 	id, err := strconv.ParseUint(c.String("block-index"), 10, 32)
 	if err != nil {
-		log.Fatalf("invalid index value --block-index: %s", err)
+		return fmt.Errorf("invalid index value --block-index: %s\n", err)
 	}
 	blockIndex = uint32(id)
 
 	vFileFactory := &vhdFile.FileFactory{}
 	vFile, err := vFileFactory.Create(vhdPath)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 	defer vFileFactory.Dispose(nil)
 
 	if vFile.GetDiskType() == footer.DiskTypeFixed {
-		log.Fatalln("Warn: Only expandable VHDs has bitmap associated with blocks, this is a fixed VHD")
+		return errors.New("Warn: Only expandable VHDs has bitmap associated with blocks, this is a fixed VHD")
 	}
 
 	vBlockFactory, err := vFile.GetBlockFactory()
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
-	if int64(blockIndex) > vBlockFactory.GetBlockCount() - 1 {
-		log.Fatalf("Warn: given block index %d is out of boundary, block index range is [0 : %d]", blockIndex, vBlockFactory.GetBlockCount() - 1)
+	if int64(blockIndex) > vBlockFactory.GetBlockCount()-1 {
+		return fmt.Errorf("Warn: given block index %d is out of boundary, block index range is [0 : %d]", blockIndex, vBlockFactory.GetBlockCount()-1)
 	}
 
 	vBlock, err := vBlockFactory.Create(blockIndex)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	if vBlock.IsEmpty {
 		fmt.Print("The block that this bitmap belongs to is marked as empty\n\n")
 		fmt.Print(createEmptyBitmapString(bytesPerLine, bitsPerLine, vFile.BlockAllocationTable.GetBitmapSizeInBytes()))
-		return
+		return nil
 	}
 
 	fmt.Print(createBitmapString(bitsPerLine, vBlock.BitMap))
+	return nil
 }
 
 func createEmptyBitmapString(bytesPerLine, bitsPerLine, bitmapSizeInBytes int32) string {
@@ -406,17 +422,17 @@ func createEmptyBitmapString(bytesPerLine, bitsPerLine, bitmapSizeInBytes int32)
 	}
 
 	count := bitmapSizeInBytes / bytesPerLine
-	pad := len(strconv.FormatInt(int64(bitmapSizeInBytes * 8), 10))
+	pad := len(strconv.FormatInt(int64(bitmapSizeInBytes*8), 10))
 	fmtLine := fmt.Sprintf("[%%-%dd - %%%dd]", pad, pad)
 	for i := int32(0); i < count; i++ {
-		buffer.WriteString(fmt.Sprintf(fmtLine, i * bitsPerLine, i * bitsPerLine + bitsPerLine - 1))
+		buffer.WriteString(fmt.Sprintf(fmtLine, i*bitsPerLine, i*bitsPerLine+bitsPerLine-1))
 		buffer.WriteString(line)
 		buffer.WriteString("\n")
 	}
 
 	remaining := bitmapSizeInBytes % bytesPerLine
 	if remaining != 0 {
-		buffer.WriteString(fmt.Sprintf(fmtLine, count * bitsPerLine, count * bitsPerLine + 8 * remaining - 1))
+		buffer.WriteString(fmt.Sprintf(fmtLine, count*bitsPerLine, count*bitsPerLine+8*remaining-1))
 		for i := int32(0); i < remaining; i++ {
 			buffer.WriteString(" 00000000")
 		}
@@ -431,11 +447,11 @@ func createBitmapString(bitsPerLine int32, vBlockBitmap *bitmap.BitMap) string {
 	pad := len(strconv.FormatInt(int64(vBlockBitmap.Length), 10))
 	fmtLine := fmt.Sprintf("[%%-%dd - %%%dd]", pad, pad)
 	for i := int32(0); i < vBlockBitmap.Length; {
-		if i % bitsPerLine == 0 {
-			if i < vBlockBitmap.Length - bitsPerLine {
-				buffer.WriteString(fmt.Sprintf(fmtLine, i, i + bitsPerLine - 1))
+		if i%bitsPerLine == 0 {
+			if i < vBlockBitmap.Length-bitsPerLine {
+				buffer.WriteString(fmt.Sprintf(fmtLine, i, i+bitsPerLine-1))
 			} else {
-				buffer.WriteString(fmt.Sprintf(fmtLine, i, vBlockBitmap.Length - 1))
+				buffer.WriteString(fmt.Sprintf(fmtLine, i, vBlockBitmap.Length-1))
 			}
 		}
 
@@ -448,7 +464,7 @@ func createBitmapString(bitsPerLine int32, vBlockBitmap *bitmap.BitMap) string {
 		}
 		buffer.WriteByte(' ')
 		buffer.WriteString(fmt.Sprintf("%08b", b))
-		if i % bitsPerLine == 0 {
+		if i%bitsPerLine == 0 {
 			buffer.WriteString("\n")
 		}
 	}
