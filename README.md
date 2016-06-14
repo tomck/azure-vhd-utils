@@ -1,5 +1,5 @@
 
-# Azure VHD utilities for Go.
+# Azure VHD utilities.
 
 This project provides a Go package to read Virtual Hard Disk (VHD) file, a CLI interface to upload local VHD to Azure storage and to inspect a local VHD.
 
