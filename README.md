@@ -22,6 +22,12 @@ An implementation of VHD [VHD specification](https://technet.microsoft.com/en-us
     2. https://github.com/Azure/azure-sdk-for-go
             This package is used to make Microsoft Azure storage API calls.
 
+# Features
+
+1. Fast uploads - This tool offers faster uploads than the [Azure Cross Platform Command Line](https://github.com/Azure/azure-xplat-cli).
+2. Efficient uploads - This tool will only upload used (non-zero) portions of the disk.
+3. Parallelism - This tool can upload VHDs concurrently (user configurable).
+
 # Usage
 
 ### Upload local VHD to Azure storage as page blob
